@@ -1,0 +1,36 @@
+pragma.syntax("0.9")
+
+def makeInputSource := <import:org.xml.sax.makeInputSource>
+def makeStringReader := <import:java.io.makeStringReader>
+
+/** Make an XML quasi-parser. Currently, there are no parameters, but there will be in the future to support default namespaces and so on. */
+def makeXMLQuasiParser() {
+    
+    #def makeDocumentBuilder := <import:javax.xml.parsers.makeDocumentBuilderFactory>.newInstance()
+    #def myDocumentBuilder := makeDocumentBuilder.newDocumentBuilder()
+
+    def makeSAXParser := <import:javax.xml.parsers.makeSAXParserFactory>.newInstance()
+    makeSAXParser.setNamespaceAware(true)
+    
+    def myParser := makeSAXParser.newSAXParser()
+    
+    def xml__quasiParser {
+        to valueMaker(template) {
+            # XXX template contains $ and @-holes. We need to parse these out in a context-sensitive manner.
+
+            def saxHandler {
+            }
+            
+            myParser.reset()
+            myParser.parse(makeInputSource(makeStringReader(template)), saxHandler)
+            
+            def xmlQuasiParserValueMaker {
+                to substitute(holes) {
+                    return 
+                }
+            }
+            return xmlQuasiParserValueMaker
+        }
+    }
+    return xml__quasiParser
+}

@@ -1,0 +1,10 @@
+  ? pragma.syntax("0.9")
+  
+  ? def makeXMLQuasiParser := <import:org.switchb.e.xml.makeXMLQuasiParser>
+  # value: <makeXMLQuasiParser>
+  
+  ? def xml__quasiParser := makeXMLQuasiParser()
+  # value <xml__quasiParser>
+  
+  ? def someXML := xml`<html><head></head><body/></html>`
+  # value: xml`<html><head/><body/></html>`
