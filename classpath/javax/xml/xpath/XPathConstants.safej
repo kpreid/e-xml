@@ -1,0 +1,8 @@
+class(safe, "javax.xml.xpath.XPathConstants",
+      statics(method("getNUMBER()"),
+              method("getSTRING()"),
+              method("getBOOLEAN()"),
+              method("getNODESET()"),
+              method("getNODE()"),
+              method("getDOM_OBJECT_MODEL()")),
+      methods)

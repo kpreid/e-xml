@@ -1,0 +1,12 @@
+class(safe, "javax.xml.transform.OutputKeys",
+      statics(method("getMETHOD()"),
+              method("getVERSION()"),
+              method("getENCODING()"),
+              method("getOMIT_XML_DECLARATION()"),
+              method("getSTANDALONE()"),
+              method("getDOCTYPE_PUBLIC()"),
+              method("getDOCTYPE_SYSTEM()"),
+              method("getCDATA_SECTION_ELEMENTS()"),
+              method("getINDENT()"),
+              method("getMEDIA_TYPE()")),
+      methods)

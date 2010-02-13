@@ -1,0 +1,13 @@
+class(safe, "javax.xml.xpath.XPathFactory",
+      statics(method("getDEFAULT_PROPERTY_NAME()"),
+              method("getDEFAULT_OBJECT_MODEL_URI()"),
+              method("newInstance()"),
+              # newInstance(String...) is suppressed because it allows bringing in arbitrary possibly-unsafe implementations if they exist on your classpath. We need to sugar it with a mechanism which allows generating XPathFactories using object-reference or safej-controlled sources.
+              method(suppress, "newInstance(String)"),
+              method(suppress, "newInstance(String, String, ClassLoader)")),
+      methods(method("isObjectModelSupported(String)"),
+              method("setFeature(String, boolean)"),
+              method("getFeature(String)"),
+              method("setXPathVariableResolver(XPathVariableResolver)"),
+              method("setXPathFunctionResolver(XPathFunctionResolver)"),
+              method("newXPath()")))
