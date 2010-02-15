@@ -1,35 +1,79 @@
 pragma.syntax("0.9")
 
-def makeInputSource := <import:org.xml.sax.makeInputSource>
-def makeStringReader := <import:java.io.makeStringReader>
+def convertHoles := <import:org.quasiliteral.text.convertHoles>
+#def makeInputSource := <import:org.xml.sax.makeInputSource>
+#def makeSAXHandlerAdapter := <import:org.switchb.e.xml.makeSAXHandlerAdapter>
+#def makeStringReader := <import:java.io.makeStringReader>
+def makeXMLTree := <import:org.switchb.e.xml.makeXMLTree>
 
 /** Make an XML quasi-parser. Currently, there are no parameters, but there will be in the future to support default namespaces and so on. */
 def makeXMLQuasiParser() {
     
-    #def makeDocumentBuilder := <import:javax.xml.parsers.makeDocumentBuilderFactory>.newInstance()
-    #def myDocumentBuilder := makeDocumentBuilder.newDocumentBuilder()
-
-    def makeSAXParser := <import:javax.xml.parsers.makeSAXParserFactory>.newInstance()
-    makeSAXParser.setNamespaceAware(true)
+    # So far, wrapping DOM is being a simpler strategy. This is probably going to change in the future (quasipatterns, efficiency of immutability, obvious-deep-frozenness), so this SAX code was written and hasn't been scrapped. Don't hesitate to throw it out anyway.
+    #def makeSAXParser := <import:javax.xml.parsers.makeSAXParserFactory>.newInstance()
+    #makeSAXParser.setNamespaceAware(true)
+    #def myParser := makeSAXParser.newSAXParser()
     
-    def myParser := makeSAXParser.newSAXParser()
+    def xpath__quasiParser {
+        /** Deprecated quasiparser interface. */
+        to valueMaker(template :String) {
+            return E.call(xpath__quasiParser, "valueMaker", convertHoles(template)(0,2))
+        }
+         
+        to valueMaker(template :String, valueHoles :List[int]) {
+            require(valueHoles =~ [], "Quasi-holes not supported in XPath objects yet.") # XXX fix this
+            
+            return def xpathValueMaker {
+                to substitute(==[]) {
+                    
+                    # XXX the definition of XPath value objects probably belongs next to makeXMLTree since the Java XPath object is there, and so on.
+                    return def xpathValue {
+                        to __printOn(out) {
+                            # XXX respect print/quote once EoJ supports that
+                            out.print("xpath`")
+                            out.print(template.replaceAll("`", "``").replaceAll("$", "$$").replaceAll("@", "@@"))
+                            out.print("`")
+                        }
+                        
+                        to getXPathExpression() {
+                            # XXX this is going to be replaced with something more strongly-typed once the namespace issues are settled.
+                            return template
+                        }
+                    } # xpathValue
+                }
+            } # xpathValueMaker
+        }
+    } # xpath__quasiParser
     
     def xml__quasiParser {
-        to valueMaker(template) {
-            # XXX template contains $ and @-holes. We need to parse these out in a context-sensitive manner.
-
-            def saxHandler {
-            }
+        /** Deprecated quasiparser interface. */
+        to valueMaker(template :String) {
+            return E.call(xml__quasiParser, "valueMaker", convertHoles(template)(0,2))
+        }
+         
+        to valueMaker(template :String, valueHoles :List[int]) {
+            require(valueHoles =~ [], "Quasi-holes not supported in XML objects yet.") # XXX fix this
             
-            myParser.reset()
-            myParser.parse(makeInputSource(makeStringReader(template)), saxHandler)
+            # See note above about SAX vs DOM.
+            #def saxHandler := makeSAXHandlerAdapter(def saxHandlerE {
+            #    match _ { null } # Handle all unrecognized events by returning null. This is safe, at least as of this writing with the descriptions of all DefaultHandler2 methods. -- kpreid 2010-01-16
+            #})
+            #myParser.reset()
+            #myParser.parse(makeInputSource(makeStringReader(template)), saxHandler)
+            
+            # XXX provide an outlet for warnings?
+            def xmlTree := makeXMLTree.fromFragmentString(template, fn error { throw(error) }, fn warning {})
             
             def xmlQuasiParserValueMaker {
                 to substitute(holes) {
-                    return 
+                    return xmlTree
                 }
             }
             return xmlQuasiParserValueMaker
+        }
+        
+        to xPathQuasiParser() {
+            return xpath__quasiParser
         }
     }
     return xml__quasiParser

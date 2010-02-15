@@ -1,0 +1,120 @@
+pragma.syntax("0.9")
+
+# --- Just imports ---
+
+def makeDocumentBuilderFactory := <import:javax.xml.parsers.makeDocumentBuilderFactory>
+def makeDOMSource := <import:javax.xml.transform.dom.makeDOMSource>
+def makeFlexList := <elib:tables.makeFlexList>
+def makeInputSource := <import:org.xml.sax.makeInputSource>
+def makeNode := <import:org.w3c.dom.makeNode>
+def makeStreamResult := <import:javax.xml.transform.stream.makeStreamResult>
+def makeStringReader := <import:java.io.makeStringReader>
+def OutputKeys := <import:javax.xml.transform.makeOutputKeys>
+def OneArgFunc := <type:org.erights.e.elib.util.OneArgFunc>
+def XPathConstants := <import:javax.xml.xpath.makeXPathConstants>
+
+# --- Stateful objects which are reused ---
+
+def makeDocumentBuilder := makeDocumentBuilderFactory.newInstance()
+makeDocumentBuilder.setNamespaceAware(true)
+def documentBuilder := makeDocumentBuilder.newDocumentBuilder()
+
+def fragmentOutputTransformer := <import:javax.xml.transform.makeTransformerFactory>.newInstance().newTransformer()
+fragmentOutputTransformer.setOutputProperty(OutputKeys.getOMIT_XML_DECLARATION(), "yes");
+
+def xpath := <import:javax.xml.xpath.makeXPathFactory>.newInstance().newXPath()
+
+# --- Code ---
+
+# Temporary kludge. We use this namespace to construct a document around the provided document fragment. This should be replaced with arranging to enter the parser at the proper point
+def docHackElement := "THISDOESNOTEXISTINTHEDOCUMENTHOPEFULLY"
+
+def makeFragmentWrapper
+
+def makeNodeListWrapper(nodeList) {
+    def list := makeFlexList.make()
+    for i in 0..!(nodeList.getLength()) {
+        list.push(makeFragmentWrapper(nodeList.item(i)))
+    }
+    return list.snapshot()
+}
+
+bind makeFragmentWrapper(frag) {
+    def xmlTree {
+        /** XXX The output of this is not always a valid E expression because it does not respect $/@/` escaping yet. */
+        to __printOn(out) {
+            # XXX $-escaping
+            # XXX print/quote distinction (not exposed in EoJ)
+            if (frag.getNodeType() == makeNode.getATTRIBUTE_NODE()) {
+                def [tw, sb] := <elib:oldeio.makeTextWriter>.makeBufferingPair()
+                def wrapper := frag.getOwnerDocument().createElement("a")
+                wrapper.setAttributeNode(frag.cloneNode(true))
+                fragmentOutputTransformer.transform(makeDOMSource(wrapper), makeStreamResult(tw))
+                def `<a @string/>` := sb.snapshot()
+                out.print("xmlattr`", string, "`")
+            } else {
+                out.print("xml`")
+                fragmentOutputTransformer.transform(makeDOMSource(frag), makeStreamResult(out))
+                out.print("`")
+            }
+        }
+        
+        to __conformTo(guard) {
+            if (frag.getNodeType() == makeNode.getTEXT_NODE() &&
+                (def str := frag.getData()) =~ _ :guard
+            ) {
+                return str
+            } else if (frag.getNodeType() == makeNode.getATTRIBUTE_NODE() &&
+                       (def str := frag.getValue()) =~ _ :guard
+            ) {
+                return str
+            } else {
+                return null
+            }
+        }
+        
+        /** Given an XPath expression object, return a collection whose values are the XML nodes it matches. */
+        to get(xpathObj) {
+            # XXX this is wrong with regard to namespaces; namespaces should be carried with the xpath expr
+            def xpathExpr := xpathObj.getXPathExpression()
+            return makeNodeListWrapper(xpath."evaluate(String, Object, QName)"(xpathExpr, frag, XPathConstants.getNODESET()))
+            
+        }
+    }
+    
+    return xmlTree
+    
+}
+
+def makeXMLTree {
+    /** parseErrorHandler should be (equivalent to) an ejector, unless it is desired to collect and report on multiple parse errors. */
+    to fromFragmentString(xmlString :String, parseErrorHandler :OneArgFunc, warningHandler :OneArgFunc) {
+        require(xmlString.indexOf(docHackElement) == -1)
+        def documentString := `<$docHackElement>$xmlString</$docHackElement>`
+        
+        documentBuilder.reset()
+        
+        # We want to handle errors per our parameters, but this is necessary anyway, as per experience, the default error handler is capability-violating, printing error messages to stderr/stdout. See notes in DocumentBuilder.safej.
+        documentBuilder.setErrorHandler(def myErrorHandler {
+            to error(saxException) {
+                # Non-fatal errors may continue parsing. The handler should return rather than exiting in order to indicate this.
+                parseErrorHandler(saxException)
+            }
+            to fatalError(saxException) {
+                parseErrorHandler(saxException)
+                throw(saxException) # doesn't reach here if the handler is an ejector
+            }
+            to warning(saxException) {
+                warningHandler(saxException)
+            }
+        })
+        
+        def document := documentBuilder.parse(makeInputSource(makeStringReader(documentString)))
+        def frag := document.createDocumentFragment()
+        def hackElement := document.getDocumentElement()
+        while (hackElement.getFirstChild() =~ c :notNull) {
+            frag.appendChild(c)
+        }
+        return makeFragmentWrapper(frag)
+    }
+}

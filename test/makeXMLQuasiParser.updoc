@@ -5,6 +5,102 @@
   
   ? def xml__quasiParser := makeXMLQuasiParser()
   # value <xml__quasiParser>
+
+The XPath quasiparser is gotten from the XML quasiparser, because they happen to share a lot of details, or will (particularly, namespace prefixes).
+
+  ? def xpath__quasiParser := xml__quasiParser.xPathQuasiParser()
+  # value <xpath__quasiParser>
   
-  ? def someXML := xml`<html><head></head><body/></html>`
+  ? xml`<html><head></head><body/></html>`
   # value: xml`<html><head/><body/></html>`
+  #        
+  #        NOTE: This test case currently fails, because the XML parser used is doing some kind of DWIM into a HTML mode. XXX to be fixed.
+
+Checking preservation of comments, PIs, etc.
+
+  ? xml`<asdf> g </asdf><?foo?> hi<!--boo-->`
+  # value: xml`<asdf> g </asdf><?foo?> hi<!--boo-->`
+  #        
+  #        XXX this test case fails because its result has different whitespace. Review whether this is correct behavior.
+
+Namespace issues
+---------------
+
+The plan is that the xml__quasiParser has embedded in itself a set of namespace declarations which the XML quasiliterals are parsed with respect to, so that you can define the namespaces for your application once (per lexical environment) and use them repeatedly. This is not yet implemented.
+
+Per XML Infoset, the placement of XML namespace attributes is significant, but each element *also* has its full namespace. So it is possible to have an XML tree which lacks a namespace attribute, but has a namespaced element with embedded namespace URI. We don't handle this kind of situation yet.
+
+This should probably be an error:
+
+  ? xml`<x:y/>`
+  # problem: <SAXParseException: The prefix "x" for element "x:y" is not bound.>
+
+This is self-contained:
+
+  ? xml`<x:y xmlns:x="foo"/>`
+  # value: xml`<x:y xmlns:x="foo"/>`
+  
+Subdivision via XPath
+---------------------
+
+XPath expressions as objects:
+
+  ? xpath`asdf`
+  # value: xpath`asdf`
+
+XPath expressions serve as subscripts of XML objects. The result is a collection (i.e. implements the iteration protocol) of unspecified type whose values are the result nodes. (XXX In general, XPath assumes you can walk *up* the node tree. And it may be useful to search for nodes and get context. We should solve this problem by introducing zippers (which have a notion of parent) and/or a node-list type which provides context paths. So, for now the result type is unspecified, but currently a list.)
+
+The following cases are rather miscellaneous. XXX organize them, figure out what is a *test* and what is an *example*.
+
+  ? xml`<asdf>g</asdf>hi<!--boo-->`[xpath`asdf`]
+  # value: [xml`<asdf>g</asdf>`]
+
+  ? xml`<asdf>g</asdf>hi<!--boo-->`[xpath`asdf/node()`]
+  # value: [xml`g`]
+
+  ? xml`<asdf>g</asdf>hi<!--boo-->`[xpath`//text()`]
+  # value: [xml`g`, xml`hi`]
+  
+  ? xml`<a/><b/><c/><d/>`[xpath`b/following-sibling::*`]
+  # value: [xml`<c/>`, xml`<d/>`]
+  
+  ? xml`<a>xyz</a><b>foo</b><a>bar</a>`[xpath`a/text()`]
+  # value: [xml`xyz`, xml`bar`]
+  
+  ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`//c`]
+  # value: [xml`<c>dd</c>`, xml`<c>qq</c>`]
+  
+  ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`ancestor::*`]
+  # value: []
+  
+  ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`self::node()`]
+  # value: [xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`]
+  
+  ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`self::*`]
+  # value: []
+  (self is not an *element*, due to the parse technique used. XXX fix this so that it is consistent with the next test case.)
+  
+  ? def bs := xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`a/b`]
+  # value: [xml`<b><c>dd</c></b>`]
+  
+  ? bs[0][xpath`self::*`]
+  # value: [xml`<b><c>dd</c></b>`]
+
+Stringification
+---------------
+
+  ? def texts := xml`<asdf>g</asdf>hi<!--boo-->`[xpath`//text()`]
+  # value: [xml`g`, xml`hi`]
+  
+  ? texts[0] :String
+  # value: "g"
+  
+  ? ", ".rjoin(texts :List)
+  # value: "g, hi"
+
+  ? def attrs := xml`<a b="c"/>`[xpath`a/@@b`]
+  # value: [xmlattr`b="c"`]
+  
+  ? attrs[0] :String
+  # value: "c"
+  XXX to review: Is permitting this coercion a good idea? It discards the full data of the attribute node, which arguably goes against the spirit of default E coercion.
