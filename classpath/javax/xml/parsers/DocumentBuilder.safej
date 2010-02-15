@@ -1,0 +1,21 @@
+# XXX made in a hurry, not truly reviewed for taming - kpreid 2010-02-14
+#
+# XXX Warning: The default ErrorHandler, at least in some implementations, prints errors to stderr, which is a minor capability violation. Therefore, ideally, either this class should be made unavailable or it should be tamed such that instances (as provided by DocumentBuilderFactory) always have a correct-for-our-purposes ErrorHandler.
+
+class(safe,
+      "javax.xml.parsers.DocumentBuilder",
+      statics,
+      methods(method("reset()"),
+              method("parse(InputStream)"),
+              method("parse(InputStream, String)"),
+              method("parse(String)"),
+              method("parse(File)"),
+              method("parse(InputSource)"),
+              method("isNamespaceAware()"),
+              method("isValidating()"),
+              method("setEntityResolver(EntityResolver)"),
+              method("setErrorHandler(ErrorHandler)"),
+              method("newDocument()"),
+              method("getDOMImplementation()"),
+              method("getSchema()"),
+              method("isXIncludeAware()")))

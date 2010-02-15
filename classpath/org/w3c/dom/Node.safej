@@ -1,0 +1,23 @@
+# This is just an interface, so it has a safej file solely for its constants.
+
+class(safe,
+      "org.w3c.dom.Node",
+      statics(method("getELEMENT_NODE()"),
+              method("getATTRIBUTE_NODE()"),
+              method("getTEXT_NODE()"),
+              method("getCDATA_SECTION_NODE()"),
+              method("getENTITY_REFERENCE_NODE()"),
+              method("getENTITY_NODE()"),
+              method("getPROCESSING_INSTRUCTION_NODE()"),
+              method("getCOMMENT_NODE()"),
+              method("getDOCUMENT_NODE()"),
+              method("getDOCUMENT_TYPE_NODE()"),
+              method("getDOCUMENT_FRAGMENT_NODE()"),
+              method("getNOTATION_NODE()"),
+              method("getDOCUMENT_POSITION_DISCONNECTED()"),
+              method("getDOCUMENT_POSITION_PRECEDING()"),
+              method("getDOCUMENT_POSITION_FOLLOWING()"),
+              method("getDOCUMENT_POSITION_CONTAINS()"),
+              method("getDOCUMENT_POSITION_CONTAINED_BY()"),
+              method("getDOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC()")),
+      methods())
