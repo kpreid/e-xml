@@ -9,7 +9,7 @@ import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.ext.DefaultHandler2;
 
-class SAXHandlerAdapter extends DefaultHandler2 {
+public class SAXHandlerAdapter extends DefaultHandler2 {
 	/**
 	 * Forwards to the <var>target</var>.
 	 * 
