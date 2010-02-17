@@ -13,6 +13,13 @@ def OutputKeys := <import:javax.xml.transform.makeOutputKeys>
 def OneArgFunc := <type:org.erights.e.elib.util.OneArgFunc>
 def XPathConstants := <import:javax.xml.xpath.makeXPathConstants>
 
+def ATTRIBUTE_NODE := makeNode.getATTRIBUTE_NODE()
+def ATTRIBUTE_SET_NODE {} # our own invention
+def COMMENT_NODE := makeNode.getCOMMENT_NODE()
+def DOCUMENT_FRAGMENT_NODE := makeNode.getDOCUMENT_FRAGMENT_NODE()
+def ELEMENT_NODE := makeNode.getELEMENT_NODE()
+def TEXT_NODE := makeNode.getTEXT_NODE()
+
 # --- Stateful objects which are reused ---
 
 def makeDocumentBuilder := makeDocumentBuilderFactory.newInstance()
@@ -39,16 +46,44 @@ def makeNodeListWrapper(nodeList) {
     return list.snapshot()
 }
 
-bind makeFragmentWrapper(frag) {
+def makeAttributeSet(attrList :List) {
+    # This implements the same API as DocumentFragment insofar as we need it internally
+    def childNodeList {
+        to getLength() { return attrList.size() }
+        to item(i) { return attrList[i] }
+    }
+    def attributeSet {
+        to getOwnerDocument() { return attrList[0].getOwnerDocument() }
+        to getNodeType() { return ATTRIBUTE_SET_NODE }
+        to asEList() { return attrList }
+        to getChildNodes() { return childNodeList }
+    }
+    return attributeSet
+}
+
+bind makeFragmentWrapper(frag0) {
+    # All lone nodes become wrapped in document fragments
+    def frag := if (frag0.getNodeType() == ATTRIBUTE_NODE) {
+        makeAttributeSet([frag0])
+    } else if (frag0.getNodeType() == DOCUMENT_FRAGMENT_NODE) {
+        frag0
+    } else {
+        def wrapper := frag0.getOwnerDocument().createDocumentFragment()
+        wrapper.appendChild(frag0.cloneNode(true)) # XXX O(n) -- I tried to squeeze this out and it popped up elsewhere. TODO: Switch to our own tree implementation with a DOM-interface-adapter to provide to XPath.
+        wrapper
+    }
+    
     def xmlTree {
         /** XXX The output of this is not always a valid E expression because it does not respect $/@/` escaping yet. */
         to __printOn(out) {
             # XXX $-escaping
             # XXX print/quote distinction (not exposed in EoJ)
-            if (frag.getNodeType() == makeNode.getATTRIBUTE_NODE()) {
+            if (frag.getNodeType() == ATTRIBUTE_SET_NODE) {
                 def [tw, sb] := <elib:oldeio.makeTextWriter>.makeBufferingPair()
                 def wrapper := frag.getOwnerDocument().createElement("a")
-                wrapper.setAttributeNode(frag.cloneNode(true))
+                for attr in frag.asEList() {
+                    wrapper.setAttributeNode(attr.cloneNode(true))
+                }
                 fragmentOutputTransformer.transform(makeDOMSource(wrapper), makeStreamResult(tw))
                 def `<a @string/>` := sb.snapshot()
                 out.print("xmlattr`", string, "`")
@@ -59,17 +94,33 @@ bind makeFragmentWrapper(frag) {
             }
         }
         
+        /** Text with no elements will coerce to a string. Attributes will coerce to their (string) values. */
         to __conformTo(guard) {
-            if (frag.getNodeType() == makeNode.getTEXT_NODE() &&
-                (def str := frag.getData()) =~ _ :guard
-            ) {
-                return str
-            } else if (frag.getNodeType() == makeNode.getATTRIBUTE_NODE() &&
-                       (def str := frag.getValue()) =~ _ :guard
-            ) {
-                return str
+            # XXX ought to early exit if the guard wouldn't accept any string
+            def children := frag.getChildNodes()
+            def [tw, sb] := <elib:oldeio.makeTextWriter>.makeBufferingPair()
+            var kind := null
+            for i in 0..!(children.getLength()) {
+                def child := children.item(i)
+                if (child.getNodeType() == TEXT_NODE && (kind == null || kind == TEXT_NODE)) {
+                    kind := TEXT_NODE
+                    tw.print(child.getData())
+                } else if (child.getNodeType() == ATTRIBUTE_NODE && kind == null) {
+                    # won't stringify more than one attribute at once, concatenation doesn't make sense
+                    kind := ATTRIBUTE_NODE
+                    tw.print(child.getValue())
+                } else if (child.getNodeType() == COMMENT_NODE && kind == null) {
+                    # ignore comments entirely
+                } else {
+                    # We encountered incompatible multiple children, or an unrecognized child, so fail to coerce to a string
+                    return xmlTree
+                }
+            }
+            # If guard accepts our string, provide it
+            if (sb.snapshot() =~ _ :guard) {
+                return sb.snapshot()
             } else {
-                return null
+                return xmlTree
             }
         }
         

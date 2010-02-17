@@ -70,30 +70,56 @@ The following cases are rather miscellaneous. XXX organize them, figure out what
   ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`//c`]
   # value: [xml`<c>dd</c>`, xml`<c>qq</c>`]
   
-  ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`ancestor::*`]
-  # value: []
+It is not possible to go back “up” the document using XPath. (Being able to switch this on may be a later feature; these would be XML /zipper/ objects, in the Haskell sense.)
   
+  ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`a/b`][0][xpath`ancestor::*`]
+  # value: []
+
+The XPath context node is a document fragment, not the lone element even if there is one; compare the following two results:
+
   ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`self::node()`]
   # value: [xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`]
   
   ? xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`self::*`]
   # value: []
-  (self is not an *element*, due to the parse technique used. XXX fix this so that it is consistent with the next test case.)
+
+Even extracting a specific child element still gets you a fragment, not an element:
   
   ? def bs := xml`<a>xyz<b><c>dd</c></b>asdf<c>qq</c></a>`[xpath`a/b`]
   # value: [xml`<b><c>dd</c></b>`]
   
   ? bs[0][xpath`self::*`]
+  # value: []
+
+But if you refer to the element child then you can get the same back:
+
+  ? bs[0][xpath`/*`]
   # value: [xml`<b><c>dd</c></b>`]
 
 Stringification
 ---------------
+
+An XML fragment will coerce to its text content, if and only if there are no elements or processing instructions in it. Comments are ignored. [XXX ignoring-comments part not yet implemented.]
+
+An XML attribute will coerce to its value. [XXX review: Is permitting this coercion a good idea? It discards the full data of the attribute node, which arguably goes against the spirit of default E coercion.]
+
+Example:
+
+  ? def data := xml`<name><given>John</given> <sur>Doe</sur></name>`
+  > `${data[xpath`name/sur/text()`][0]}, ${data[xpath`name/given/text()`][0]}`
+
+(Hm, this example is rather verbose due to the need to extract text() rather than the element itself, and the [0]. XXX review design for improvements.)
+
+Test cases:
 
   ? def texts := xml`<asdf>g</asdf>hi<!--boo-->`[xpath`//text()`]
   # value: [xml`g`, xml`hi`]
   
   ? texts[0] :String
   # value: "g"
+  
+  ? xml`<a/>` :String
+  # problem: <ClassCastException: EImplByProxy doesn't coerce to a String>
   
   ? ", ".rjoin(texts :List)
   # value: "g, hi"
@@ -103,4 +129,13 @@ Stringification
   
   ? attrs[0] :String
   # value: "c"
-  XXX to review: Is permitting this coercion a good idea? It discards the full data of the attribute node, which arguably goes against the spirit of default E coercion.
+  
+Checking that we're getting character data, not XML:
+
+  ? xml`&#x2022; &amp;&lt;&quot;&gt;;` :String
+  # value: "\u2022 &<\">;"
+  
+The top-level of parsing is currently handled specially in the implementation, so check that it works as it ought to.
+
+  ? xml`aardvarks` :String
+  # value: "aardvarks"
