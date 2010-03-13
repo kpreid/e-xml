@@ -1,30 +1,37 @@
 pragma.syntax("0.9")
+pragma.enable("one-method-object")
 
 # --- Just imports ---
 
-def makeDocumentBuilderFactory := <import:javax.xml.parsers.makeDocumentBuilderFactory>
+#def makeDocumentBuilderFactory := <import:javax.xml.parsers.makeDocumentBuilderFactory>
 def makeDOMSource := <import:javax.xml.transform.dom.makeDOMSource>
 def makeFlexList := <elib:tables.makeFlexList>
 def makeInputSource := <import:org.xml.sax.makeInputSource>
 def makeNode := <import:org.w3c.dom.makeNode>
+def makeQName := <import:javax.xml.namespace.makeQName>
+def makeSAXHandlerAdapter := <import:org.switchb.e.xml.makeSAXHandlerAdapter>
 def makeStreamResult := <import:javax.xml.transform.stream.makeStreamResult>
+def makeString := <import:java.lang.makeString>
 def makeStringReader := <import:java.io.makeStringReader>
 def OutputKeys := <import:javax.xml.transform.makeOutputKeys>
 def OneArgFunc := <type:org.erights.e.elib.util.OneArgFunc>
+def QName := <type:javax.xml.namespace.QName>
 def XPathConstants := <import:javax.xml.xpath.makeXPathConstants>
 
 def ATTRIBUTE_NODE := makeNode.getATTRIBUTE_NODE()
-def ATTRIBUTE_SET_NODE {} # our own invention
 def COMMENT_NODE := makeNode.getCOMMENT_NODE()
+def DOCUMENT_NODE := makeNode.getDOCUMENT_NODE()
 def DOCUMENT_FRAGMENT_NODE := makeNode.getDOCUMENT_FRAGMENT_NODE()
 def ELEMENT_NODE := makeNode.getELEMENT_NODE()
 def TEXT_NODE := makeNode.getTEXT_NODE()
 
+def DEFAULT_NS_PREFIX := <import:javax.xml.makeXMLConstants>.getDEFAULT_NS_PREFIX()
+
 # --- Stateful objects which are reused ---
 
-def makeDocumentBuilder := makeDocumentBuilderFactory.newInstance()
-makeDocumentBuilder.setNamespaceAware(true)
-def documentBuilder := makeDocumentBuilder.newDocumentBuilder()
+#def makeDocumentBuilder := makeDocumentBuilderFactory.newInstance()
+#makeDocumentBuilder.setNamespaceAware(true)
+#def documentBuilder := makeDocumentBuilder.newDocumentBuilder()
 
 def fragmentOutputTransformer := <import:javax.xml.transform.makeTransformerFactory>.newInstance().newTransformer()
 fragmentOutputTransformer.setOutputProperty(OutputKeys.getOMIT_XML_DECLARATION(), "yes");
@@ -33,94 +40,135 @@ def xpath := <import:javax.xml.xpath.makeXPathFactory>.newInstance().newXPath()
 
 # --- Code ---
 
-# Temporary kludge. We use this namespace to construct a document around the provided document fragment. This should be replaced with arranging to enter the parser at the proper point
-def docHackElement := "THISDOESNOTEXISTINTHEDOCUMENTHOPEFULLY"
+# Temporary kludge. We use this name to construct a document around the provided document fragment. This should be replaced with arranging to enter the parser at the proper point
+def docHackElement := "FRAGMENT-TO-DOCUMENT"
 
-def makeFragmentWrapper
+def makeFragment
+def XMLEMPTY
 
+# used only for XPath; XXX move
 def makeNodeListWrapper(nodeList) {
     def list := makeFlexList.make()
     for i in 0..!(nodeList.getLength()) {
-        list.push(makeFragmentWrapper(nodeList.item(i)))
+        list.push(nodeList.item(i))
     }
     return list.snapshot()
 }
-
-def makeAttributeSet(attrList :List) {
-    # This implements the same API as DocumentFragment insofar as we need it internally
-    def childNodeList {
-        to getLength() { return attrList.size() }
-        to item(i) { return attrList[i] }
+ 
+def attrsAsConstDOM(attrs) {
+    return def attrsDOM {
+        to getLength() { return attrs.size() }
     }
-    def attributeSet {
-        to getOwnerDocument() { return attrList[0].getOwnerDocument() }
-        to getNodeType() { return ATTRIBUTE_SET_NODE }
-        to asEList() { return attrList }
-        to getChildNodes() { return childNodeList }
-    }
-    return attributeSet
 }
 
-bind makeFragmentWrapper(frag0) {
-    # All lone nodes become wrapped in document fragments
-    def frag := if (frag0.getNodeType() == ATTRIBUTE_NODE) {
-        makeAttributeSet([frag0])
-    } else if (frag0.getNodeType() == DOCUMENT_FRAGMENT_NODE) {
-        frag0
-    } else {
-        def wrapper := frag0.getOwnerDocument().createDocumentFragment()
-        wrapper.appendChild(frag0.cloneNode(true)) # XXX O(n) -- I tried to squeeze this out and it popped up elsewhere. TODO: Switch to our own tree implementation with a DOM-interface-adapter to provide to XPath.
-        wrapper
+interface Item guards ItemStamp {}
+
+def makeText(text :Twine) {
+    return def _text implements ItemStamp {
+        to asConstDOM(up, before, after) {
+            return def constDOMTextNode { # implements Node, CharacterData, Text (XXX only partially)
+                to getNodeType() { return TEXT_NODE }
+                to getNodeName() { return "#text" } # per Node interface
+                to getNextSibling() { return after.asConstDOM(up, before + makeFragment([_text]), XMLEMPTY).getFirstChild() }
+                
+                to getData() { return text }
+                to getNodeValue() { return text }
+            }
+        }
     }
-    
+}
+
+/** Since our exposed values are all fragments, this is purely an internal interface */
+def makeElement(qname :QName, attrs, children) {
+    return def _element implements ItemStamp {
+        to asConstDOM(up, before, after) {
+            return def constDOMElementNode { # implements Node, Element
+                to getNodeType() { return ELEMENT_NODE }
+                to getNodeName() { 
+                    if (qname.getPrefix() == DEFAULT_NS_PREFIX) {
+                        return qname.getLocalPart()
+                    } else {
+                        return `${qname.getPrefix()}:${qname.getLocalPart()}`
+                    }
+                } # XXX wrong for unqualified names
+                to getFirstChild() { return children.asConstDOM(Ref.broken("XXX no up for elements yet"), XMLEMPTY, XMLEMPTY).getFirstChild() }
+                to getNextSibling() { return after.asConstDOM(up, before + makeFragment([_element]), XMLEMPTY).getFirstChild() }
+                
+                to getAttributes() { return attrsAsConstDOM(attrs) }
+                to getNamespaceURI() { return qname.getNamespaceURI() }
+                to getLocalName() { return qname.getLocalPart() }
+                to getPrefix() { return qname.getPrefix() }
+                
+            }
+        }
+    }
+}
+
+/** Represents zero or more XML attributes. */
+def makeAttributeSet(attrs :List) {
+    def attributeSet {
+        to __printOn(out) {
+            # XXX $-escaping
+            # XXX print/quote distinction (not exposed in EoJ)
+            def [tw, sb] := <elib:oldeio.makeTextWriter>.makeBufferingPair()
+            def wrapper := makeElement(makeQName("a"), attributeSet, makeFragment([])).asConstDOM(Ref.broken("unspecific up"), XMLEMPTY, XMLEMPTY)
+            fragmentOutputTransformer.transform(makeDOMSource(wrapper), makeStreamResult(tw))
+            def `<a @string/>` := sb.snapshot()
+            out.print("xmlattr`", string, "`")
+        }
+    }
+}
+
+bind makeFragment(items :List[Item]) {
+    /** XML fragment object. XXX write docs for this. */
     def xmlTree {
         /** XXX The output of this is not always a valid E expression because it does not respect $/@/` escaping yet. */
         to __printOn(out) {
             # XXX $-escaping
             # XXX print/quote distinction (not exposed in EoJ)
-            if (frag.getNodeType() == ATTRIBUTE_SET_NODE) {
-                def [tw, sb] := <elib:oldeio.makeTextWriter>.makeBufferingPair()
-                def wrapper := frag.getOwnerDocument().createElement("a")
-                for attr in frag.asEList() {
-                    wrapper.setAttributeNode(attr.cloneNode(true))
-                }
-                fragmentOutputTransformer.transform(makeDOMSource(wrapper), makeStreamResult(tw))
-                def `<a @string/>` := sb.snapshot()
-                out.print("xmlattr`", string, "`")
-            } else {
-                out.print("xml`")
-                fragmentOutputTransformer.transform(makeDOMSource(frag), makeStreamResult(out))
-                out.print("`")
-            }
+            out.print("xml`")
+            fragmentOutputTransformer.transform(makeDOMSource(xmlTree.asConstDOM(Ref.broken("nowhere up"), XMLEMPTY, XMLEMPTY)), makeStreamResult(out))
+            out.print("`")
         }
         
-        /** Text with no elements will coerce to a string. Attributes will coerce to their (string) values. */
-        to __conformTo(guard) {
-            # XXX ought to early exit if the guard wouldn't accept any string
-            def children := frag.getChildNodes()
-            def [tw, sb] := <elib:oldeio.makeTextWriter>.makeBufferingPair()
-            var kind := null
-            for i in 0..!(children.getLength()) {
-                def child := children.item(i)
-                if (child.getNodeType() == TEXT_NODE && (kind == null || kind == TEXT_NODE)) {
-                    kind := TEXT_NODE
-                    tw.print(child.getData())
-                } else if (child.getNodeType() == ATTRIBUTE_NODE && kind == null) {
-                    # won't stringify more than one attribute at once, concatenation doesn't make sense
-                    kind := ATTRIBUTE_NODE
-                    tw.print(child.getValue())
-                } else if (child.getNodeType() == COMMENT_NODE && kind == null) {
-                    # ignore comments entirely
-                } else {
-                    # We encountered incompatible multiple children, or an unrecognized child, so fail to coerce to a string
-                    return xmlTree
+        /** Internal use only. Subject to change. */
+        to _getItems() { return items }
+        
+        /** Return the concatenation of this XML fragment with the other. */
+        to add(other) { # XXX should guard the other
+            return makeFragment(items + other._getItems())
+        }
+        
+        /** Text with no elements will coerce to a string. */
+        #to __conformTo(guard) {
+        #    # XXX ought to early exit if the guard wouldn't accept any string
+        #    def [tw, sb] := <elib:oldeio.makeTextWriter>.makeBufferingPair()
+        #    for child in nodes {
+        #        if (child.getNodeType() == TEXT_NODE) {
+        #            tw.print(child.getData())
+        #        } else if (child.getNodeType() == COMMENT_NODE) {
+        #            # ignore comments entirely
+        #        } else {
+        #            # We encountered an unrecognized child, so fail to coerce to a string
+        #            return xmlTree
+        #        }
+        #    }
+        #    # If guard accepts our string, provide it
+        #    if (sb.snapshot() =~ _ :guard) {
+        #        return sb.snapshot()
+        #    } else {
+        #        return xmlTree
+        #    }
+        #}
+        
+        to asConstDOM(up, before, after) {
+            return def domFragmentObject { # implements Node
+                to getNodeType() { return DOCUMENT_FRAGMENT_NODE }
+                to getFirstChild() { 
+                    return if (items.size() > 0) {
+                        items[0].asConstDOM(Ref.broken("XXX unimp: up for frags"), XMLEMPTY, makeFragment(items(1)))
+                    }
                 }
-            }
-            # If guard accepts our string, provide it
-            if (sb.snapshot() =~ _ :guard) {
-                return sb.snapshot()
-            } else {
-                return xmlTree
             }
         }
         
@@ -128,7 +176,7 @@ bind makeFragmentWrapper(frag0) {
         to get(xpathObj) {
             # XXX this is wrong with regard to namespaces; namespaces should be carried with the xpath expr
             def xpathExpr := xpathObj.getXPathExpression()
-            return makeNodeListWrapper(xpath."evaluate(String, Object, QName)"(xpathExpr, frag, XPathConstants.getNODESET()))
+            return makeNodeListWrapper(xpath."evaluate(String, Object, QName)"(xpathExpr, xmlTree.asConstDOM(Ref.broken("can't go up"), XMLEMPTY, XMLEMPTY), XPathConstants.getNODESET()))
             
         }
     }
@@ -137,35 +185,123 @@ bind makeFragmentWrapper(frag0) {
     
 }
 
+bind XMLEMPTY := makeFragment([])
+
+def makeQNameFromSAX(nsURI, localName, qNameStr) {
+    return if (qNameStr =~ `@ns:@localPart`) {
+        require (localName == localPart, fn { "Can't happen XML QName inconsistency: $localName vs $localPart" })
+        makeQName(nsURI, localName, ns)
+    } else {
+        makeQName(nsURI, localName)
+    }
+}
+
+def makeSAXParser := <import:javax.xml.parsers.makeSAXParserFactory>.newInstance()
+makeSAXParser.setNamespaceAware(true)
+def myParser := makeSAXParser.newSAXParser()
+
 def makeXMLTree {
+    # XXX add an entry point for parsing a whole document.
+    
     /** parseErrorHandler should be (equivalent to) an ejector, unless it is desired to collect and report on multiple parse errors. */
     to fromFragmentString(xmlString :String, parseErrorHandler :OneArgFunc, warningHandler :OneArgFunc) {
-        require(xmlString.indexOf(docHackElement) == -1)
         def documentString := `<$docHackElement>$xmlString</$docHackElement>`
         
-        documentBuilder.reset()
+        # XXX We ought to preserve twine spans. May be difficult using SAX.
+        
+        # tree-builder state
+        var isFirstElement := true
+        def parentStack := [].diverge()
+        var curChildren := []
+        var myElemProps := null
+        
+        def saxHandler := makeSAXHandlerAdapter(def saxHandlerE {
+            to setDocumentLocator(_) {} # XXX review whether to use this
+
+            to error(e) {
+                parseErrorHandler(e)
+            }
+            to fatalError(e) {
+                parseErrorHandler(e)
+                throw(e)
+            }
+            to warning(e) {
+                warningHandler(e)
+            }
+
+            to startDocument() {}
+            to endDocument() {}
+
+            to startPrefixMapping(_, _) {}
+            to endPrefixMapping(_) {}
+
+            to startElement(nsURI :String, localName :String, qNameStr :String, attrs) {
+                if (isFirstElement) {
+                    require(localName == docHackElement)
+                    isFirstElement := false
+                    return
+                }
+                def qNameObj := makeQNameFromSAX(nsURI, localName, qNameStr)
+                parentStack.push([[qNameObj, attrs], curChildren])
+            }
+            to endElement(_, localName, _) {
+                if (parentStack.size() == 0) {
+                    require(localName == docHackElement)
+                    return
+                }
+                def [[elemQName, elemAttrs], prevSiblings] := parentStack.pop()
+                def elemChildren := curChildren
+                curChildren := prevSiblings.with(makeElement(
+                    elemQName, 
+                    __makeMap.fromIteratable(def attrConverter.iterate(f) {
+                        for i in 0..!(elemAttrs.getLength()) {
+                            def qNameStr := elemAttrs.getQName(i)
+                            f(makeQNameFromSAX(elemAttrs.getURI(i), elemAttrs.getLocalName(i), elemAttrs.getQName(i)), elemAttrs.getValue(i))
+                        }
+                    }, false),
+                    makeFragment(elemChildren)))
+            }
+
+            to characters(charArray, start, length) {
+                curChildren with= makeText(makeString.valueOf(charArray, start, length))
+            }
+            to ignorableWhitespace(charArray, start, length) {
+                # XXX is this right?
+                curChildren with= makeText(makeString.valueOf(charArray, start, length))
+            }
+
+            to processingInstruction(_, _) {
+                # XXX handle PIs
+            }
+
+            #match _ { null } # Handle all unrecognized events by returning null. This is safe, at least as of this writing with the descriptions of all DefaultHandler2 methods. -- kpreid 2010-01-16
+        })
+        myParser.reset()
+        myParser.parse(makeInputSource(makeStringReader(documentString)), saxHandler)
+        
+        return makeFragment(curChildren)
         
         # We want to handle errors per our parameters, but this is necessary anyway, as per experience, the default error handler is capability-violating, printing error messages to stderr/stdout. See notes in DocumentBuilder.safej.
-        documentBuilder.setErrorHandler(def myErrorHandler {
-            to error(saxException) {
-                # Non-fatal errors may continue parsing. The handler should return rather than exiting in order to indicate this.
-                parseErrorHandler(saxException)
-            }
-            to fatalError(saxException) {
-                parseErrorHandler(saxException)
-                throw(saxException) # doesn't reach here if the handler is an ejector
-            }
-            to warning(saxException) {
-                warningHandler(saxException)
-            }
-        })
+        #documentBuilder.setErrorHandler(def myErrorHandler {
+        #    to error(saxException) {
+        #        # Non-fatal errors may continue parsing. The handler should return rather than exiting in order to indicate this.
+        #        parseErrorHandler(saxException)
+        #    }
+        #    to fatalError(saxException) {
+        #        parseErrorHandler(saxException)
+        #        throw(saxException) # doesn't reach here if the handler is an ejector
+        #    }
+        #    to warning(saxException) {
+        #        warningHandler(saxException)
+        #    }
+        #})
         
-        def document := documentBuilder.parse(makeInputSource(makeStringReader(documentString)))
-        def frag := document.createDocumentFragment()
-        def hackElement := document.getDocumentElement()
-        while (hackElement.getFirstChild() =~ c :notNull) {
-            frag.appendChild(c)
-        }
-        return makeFragmentWrapper(frag)
+        #def document := documentBuilder.parse(makeInputSource(makeStringReader(documentString)))
+        #def frag := document.createDocumentFragment()
+        #def hackElement := document.getDocumentElement()
+        #while (hackElement.getFirstChild() =~ c :notNull) {
+        #    frag.appendChild(c)
+        #}
+        #return makeFragmentWrapper(frag)
     }
 }

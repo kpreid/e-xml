@@ -1,0 +1,11 @@
+# This *appears* to be just a slightly smart record class, and therefore safe.
+# Note that its equals/hashCode ignore the prefix value, and therefore this object MAY NOT BE Honorary Selfless.
+class(safe,
+      "javax.xml.namespace.QName",
+      statics(method("run(String, String)"),
+              method("run(String, String, String)"),
+              method("run(String)"),
+              method("valueOf(String)")),
+      methods(method("getNamespaceURI()"),
+              method("getLocalPart()"),
+              method("getPrefix()")))
